@@ -1,0 +1,15 @@
+# CLIENT 14 — repository-wide ignores.
+# The DDNet source tree lives in ddnet/ and carries its own .gitignore for
+# build artifacts, executables, generated files, etc. This root file adds
+# exclusions for subtrees that must not enter version control:
+
+# Prebuilt external libraries (~400 MB of binaries). Re-fetch via:
+#   git clone --depth 1 --shallow-submodules https://github.com/ddnet/ddnet-libs ddnet/ddnet-libs
+/ddnet/ddnet-libs/
+
+# Accidental nested clone of upstream ddnet (empty worktree, only a .git).
+# Safe to delete entirely to reclaim disk space.
+/ddnet/ddnet/
+
+# Reinforce: never track local build output.
+/ddnet/build/
