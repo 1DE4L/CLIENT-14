@@ -1,7 +1,7 @@
 # CLIENT 14
 
 DDNet tabanlı özel antrenman istemcisi. Bot/yardımcı özellikler içerir.
-CLYDE BORROW'a özel teşekkürler
+CLYDE BARROW'a özel teşekkürler
 
 ## Ozellikler
 
