@@ -19,9 +19,11 @@ CC14FreezeHelper::CC14FreezeHelper() = default;
 
 void CC14FreezeHelper::OnReset()
 {
+	m_LastArcSimTick = -100;
+	m_CachedJumpArcSafe = true;
 }
 
-void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
+void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks)
 {
 	if(!C14::BotCanRun(GameClient()))
 		return;
@@ -41,6 +43,10 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 					continue;
 				if(GameClient()->m_aClients[i].m_Team == TEAM_SPECTATORS)
 					continue;
+				// Only hook non-frozen players: a frozen tee cannot pull us
+				// out, hooking them is useless and wastes the hook cooldown.
+				if(GameClient()->m_aClients[i].m_FreezeEnd > Client()->GameTick(0))
+					continue;
 				vec2 TPos = vec2(GameClient()->m_Snap.m_aCharacters[i].m_Cur.m_X, GameClient()->m_Snap.m_aCharacters[i].m_Cur.m_Y);
 				float Dist = distance(LocalPos, TPos);
 				if(Dist < BestDist && Dist > 0.1f)
@@ -49,32 +55,28 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 					BestId = i;
 				}
 			}
-			if(BestId >= 0)
+			if(BestId >= 0 && C14::CanClaim(Locks.m_HookOwner, C14::PRIO_FREEZE))
 			{
 				vec2 HookVec = vec2(GameClient()->m_Snap.m_aCharacters[BestId].m_Cur.m_X, GameClient()->m_Snap.m_aCharacters[BestId].m_Cur.m_Y) - LocalPos;
 				pInput->m_Hook = 1;
 				pInput->m_TargetX = (int)HookVec.x;
 				pInput->m_TargetY = (int)HookVec.y;
+				Locks.m_HookOwner = C14::PRIO_FREEZE;
+				Locks.m_TargetOwner = C14::PRIO_FREEZE;
 			}
 		}
 	}
 
-	// CLIENT 14 Avoid Freeze - predictive physics simulation
+	// CLIENT 14 Avoid Freeze - predictive physics simulation (every tick)
 	if(g_Config.m_ClAvoidFreeze && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		const CCharacterCore &LocalChar = GameClient()->m_PredictedChar;
-		vec2 AF_Pos = LocalChar.m_Pos;
-		CCollision *AF_pCol = GameClient()->Collision();
-		bool AF_OnGround = C14::Grounded(AF_pCol, AF_Pos);
-		bool AF_ChainHooking = GameClient()->m_Snap.m_pLocalCharacter->m_HookState == 2;
 		int CurDir = pInput->m_Direction;
-		int CurHook = pInput->m_Hook;
 		int CurJump = pInput->m_Jump;
 
-		vec2 Vel = LocalChar.m_Vel;
-		float Speed = absolute(Vel.x);
+		float Speed = absolute(LocalChar.m_Vel.x);
 		int N = 4;
-		if(absolute(Vel.x) > 0.05f || absolute(Vel.y) > 0.05f)
+		if(absolute(LocalChar.m_Vel.x) > 0.05f || absolute(LocalChar.m_Vel.y) > 0.05f)
 		{
 			if(Speed > 15.0f) N = 10;
 			else if(Speed > 10.0f) N = 8;
@@ -107,7 +109,11 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 				}
 			}
 
-			pInput->m_Direction = BestDir;
+			if(C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_FREEZE))
+			{
+				pInput->m_Direction = BestDir;
+				Locks.m_DirectionOwner = C14::PRIO_FREEZE;
+			}
 		}
 	}
 
@@ -176,13 +182,17 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 			}
 		}
 
-		bool JumpArcSafe = true;
-		if(NeedJump && OnGround)
+		// Throttled jump-arc simulation: rerun every m_ArcSimInterval ticks,
+		// reuse the cached verdict in between (the threat landscape does not
+		// change much within a few ticks while grounded).
+		if(NeedJump && OnGround && (Client()->GameTick(0) - m_LastArcSimTick >= m_ArcSimInterval || Client()->GameTick(0) < m_LastArcSimTick))
 		{
+			m_LastArcSimTick = Client()->GameTick(0);
 			vec2 SimPos = Pos;
 			vec2 SimVel = Vel;
 			SimVel.y = -13.2f;
 
+			m_CachedJumpArcSafe = true;
 			for(int t = 0; t < 35; t++)
 			{
 				SimVel.y += 0.5f;
@@ -194,7 +204,7 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 				   C14::HasFreeze(pCol, SimPos.x, SimPos.y + 10.0f) ||
 				   C14::HasFreeze(pCol, SimPos.x, SimPos.y - 10.0f))
 				{
-					JumpArcSafe = false;
+					m_CachedJumpArcSafe = false;
 					break;
 				}
 
@@ -202,24 +212,35 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 					break;
 			}
 		}
+		else if(!NeedJump || !OnGround)
+		{
+			// Reset the cache when there is no pending jump so a stale "unsafe"
+			// verdict does not block a future jump after the situation clears.
+			m_CachedJumpArcSafe = true;
+			m_LastArcSimTick = Client()->GameTick(0);
+		}
+		bool JumpArcSafe = m_CachedJumpArcSafe;
 
 		bool PlayerPressingJump = (pInput->m_Jump & 1) != 0;
 
 		if(!PlayerPressingJump)
 		{
-			if(NeedJump && OnGround && !fA && HeadClear && LandingSafe && JumpArcSafe && DiagonalSafe)
+			if(NeedJump && OnGround && !fA && HeadClear && LandingSafe && JumpArcSafe && DiagonalSafe &&
+				C14::CanClaim(Locks.m_JumpOwner, C14::PRIO_FREEZE))
 			{
 				pInput->m_Jump |= 1;
+				Locks.m_JumpOwner = C14::PRIO_FREEZE;
 			}
-			if(fA && !OnGround)
+			if(fA && !OnGround && C14::CanClaim(Locks.m_JumpOwner, C14::PRIO_FREEZE))
 			{
 				pInput->m_Jump &= ~1;
+				Locks.m_JumpOwner = C14::PRIO_FREEZE;
 			}
 		}
 
 		if(!JumpArcSafe || !LandingSafe || !DiagonalSafe)
 		{
-			if(fF && !fB)
+			if(fF && !fB && C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_FREEZE))
 			{
 				int RevDir = -CurDir;
 				if(RevDir != 0)
@@ -234,6 +255,7 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput)
 				{
 					pInput->m_Direction = 0;
 				}
+				Locks.m_DirectionOwner = C14::PRIO_FREEZE;
 			}
 		}
 	}

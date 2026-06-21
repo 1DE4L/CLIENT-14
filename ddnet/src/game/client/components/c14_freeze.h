@@ -7,6 +7,8 @@
 
 #include <game/client/component.h>
 
+#include "c14_input.h"
+
 class CC14FreezeHelper : public CComponent
 {
 public:
@@ -14,7 +16,15 @@ public:
 	int Sizeof() const override { return sizeof(*this); }
 
 	void OnReset() override;
-	void Apply(CNetObj_PlayerInput *pInput);
+	void Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks);
+
+private:
+	// Auto-Jump-Save: the 35-tick jump-arc simulation is the costly part and
+	// is rerun every m_ArcSimInterval ticks; the cheaper ground/freeze probes
+	// still run every tick.
+	int m_LastArcSimTick = -100;
+	bool m_CachedJumpArcSafe = true;
+	int m_ArcSimInterval = 3;
 };
 
 #endif

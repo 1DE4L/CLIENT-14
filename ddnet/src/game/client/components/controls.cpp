@@ -13,12 +13,13 @@
 
 #include <generated/protocol.h>
 
+#include <game/client/components/c14_aimbot.h>
 #include <game/client/components/c14_balance.h>
 #include <game/client/components/c14_combat.h>
 #include <game/client/components/c14_freeze.h>
 #include <game/client/components/c14_helpers.h>
+#include <game/client/components/c14_input.h>
 #include <game/client/components/c14_movement.h>
-#include <game/client/components/c14_aimbot.h>
 #include <game/client/components/camera.h>
 #include <game/client/components/chat.h>
 #include <game/client/components/menus.h>
@@ -242,11 +243,16 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
 		// CLIENT 14 bot features
-		GameClient()->m_C14Aimbot.Apply(&m_aInputData[g_Config.m_ClDummy]);
-		GameClient()->m_C14Combat.Apply(&m_aInputData[g_Config.m_ClDummy]);
-		GameClient()->m_C14FreezeHelper.Apply(&m_aInputData[g_Config.m_ClDummy]);
-		GameClient()->m_C14Movement.Apply(&m_aInputData[g_Config.m_ClDummy]);
-		GameClient()->m_C14Balance.Apply(&m_aInputData[g_Config.m_ClDummy]);
+		// Input arbitration: each bot claims input fields at its own priority
+		// (FREEZE > COMBAT > AIMBOT > BALANCE > MOVEMENT). A bot only writes a
+		// field if no higher-priority bot has claimed it this frame, so e.g.
+		// avoid-freeze overrides balance instead of the reverse.
+		C14::CInputLocks Locks;
+		GameClient()->m_C14FreezeHelper.Apply(&m_aInputData[g_Config.m_ClDummy], Locks);
+		GameClient()->m_C14Combat.Apply(&m_aInputData[g_Config.m_ClDummy], Locks);
+		GameClient()->m_C14Aimbot.Apply(&m_aInputData[g_Config.m_ClDummy], Locks);
+		GameClient()->m_C14Balance.Apply(&m_aInputData[g_Config.m_ClDummy], Locks);
+		GameClient()->m_C14Movement.Apply(&m_aInputData[g_Config.m_ClDummy], Locks);
 
 		// dummy copy moves
 		if(g_Config.m_ClDummyCopyMoves)

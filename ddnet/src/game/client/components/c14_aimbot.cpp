@@ -19,6 +19,8 @@ CC14Aimbot::CC14Aimbot()
 {
 	mem_zero(m_aAutoHookKeyDown, sizeof(m_aAutoHookKeyDown));
 	mem_zero(m_aBotHooked, sizeof(m_aBotHooked));
+	for(int &Target : m_aHookedTarget)
+		Target = -1;
 	m_Target = vec2(0.0f, 0.0f);
 	m_TargetId = -1;
 	m_Active = false;
@@ -28,9 +30,12 @@ void CC14Aimbot::OnReset()
 {
 	mem_zero(m_aAutoHookKeyDown, sizeof(m_aAutoHookKeyDown));
 	mem_zero(m_aBotHooked, sizeof(m_aBotHooked));
+	for(int &Target : m_aHookedTarget)
+		Target = -1;
 	m_Target = vec2(0.0f, 0.0f);
 	m_TargetId = -1;
 	m_Active = false;
+	m_LastScanTick = -100;
 }
 
 struct CAimbotKeyInputState
@@ -62,13 +67,27 @@ bool CC14Aimbot::PredictHook(vec2 myPos, vec2 myVel, vec2 &targetPos, vec2 targe
 	const float b = 2.0f * dot(deltaVel, delta);
 	const float c = dot(delta, delta);
 	const float sol = b * b - 4.0f * a * c;
-	if(sol > 0.0f)
+	if(sol < 0.0f)
+		return false;
+	// Degenerate (near-linear) case: |deltaVel| ~= hookSpeed, so a ~= 0 and
+	// the quadratic collapses to b*t + c = 0.
+	if(absolute(a) < 1e-6f)
 	{
-		const float time = absolute(2.0f * c / (sqrtf(sol) - b));
+		if(absolute(b) < 1e-6f)
+			return false;
+		const float time = -c / b;
+		if(time < 0.0f)
+			return false;
 		targetPos += targetVel * time;
 		return true;
 	}
-	return false;
+	const float sq = sqrtf(sol);
+	const float denom = sq - b;
+	if(absolute(denom) < 1e-6f)
+		return false;
+	const float time = absolute(2.0f * c / denom);
+	targetPos += targetVel * time;
+	return true;
 }
 
 bool CC14Aimbot::IntersectCharacter(vec2 hookPos, vec2 lineEnd, vec2 targetPos, vec2 &newPos)
@@ -204,13 +223,16 @@ int CC14Aimbot::GetClosestId(float fovDeg, float range)
 	return ClosestID;
 }
 
-void CC14Aimbot::Apply(CNetObj_PlayerInput *pInput)
+void CC14Aimbot::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks)
 {
 	if(!C14::BotCanRun(GameClient()))
 		return;
 
-	// Throttled target scan: heavy EdgeScan every 2 ticks, not every input
-	if(Client()->GameTick(0) - m_LastScanTick >= 2)
+	// Throttled target scan: heavy EdgeScan every 2 ticks, not every input.
+	// Also re-scan immediately if the game tick went backwards (map/server
+	// change), otherwise the throttle gate could lock the aimbot off forever.
+	const int CurTick = Client()->GameTick(0);
+	if(CurTick - m_LastScanTick >= 2 || CurTick < m_LastScanTick)
 	{
 		m_LastScanTick = Client()->GameTick(0);
 		m_Active = false;
@@ -254,33 +276,108 @@ void CC14Aimbot::Apply(CNetObj_PlayerInput *pInput)
 	}
 
 	// CLIENT 14 Silent Aim
-	if(g_Config.m_ClAimbot && g_Config.m_ClAimbotSilent && m_Active)
+	if(g_Config.m_ClAimbot && g_Config.m_ClAimbotSilent && m_Active && C14::CanClaim(Locks.m_TargetOwner, C14::PRIO_AIMBOT))
 	{
 		pInput->m_TargetX = (int)m_Target.x;
 		pInput->m_TargetY = (int)m_Target.y;
+		Locks.m_TargetOwner = C14::PRIO_AIMBOT;
 	}
 
 	// CLIENT 14 Auto Hook
-	if(m_aAutoHookKeyDown[g_Config.m_ClDummy] && m_Active && m_TargetId >= 0 && GameClient()->m_Snap.m_pLocalCharacter)
+	// Once a hook is fired, it is maintained independently of the aimbot scan
+	// (which flickers every 2 ticks and when EdgeScan loses visibility). The
+	// hooked target is remembered in m_aHookedTarget and the hook stays
+	// attached as long as: key is held, target is active, target is in hook
+	// range, and we are not frozen.
+	const int Dummy = g_Config.m_ClDummy;
+	const bool KeyDown = m_aAutoHookKeyDown[Dummy] != 0;
+	const bool HasLocalChar = GameClient()->m_Snap.m_pLocalCharacter != nullptr;
+
+	if(KeyDown && HasLocalChar)
 	{
 		int LocalId = GameClient()->m_Snap.m_LocalClientId;
-		if(LocalId < 0 || GameClient()->m_aClients[LocalId].m_FreezeEnd <= Client()->GameTick(0))
+		bool WeAreFrozen = LocalId >= 0 && GameClient()->m_aClients[LocalId].m_FreezeEnd > Client()->GameTick(0);
+
+		if(WeAreFrozen)
 		{
-			vec2 MyPos = GameClient()->m_PredictedChar.m_Pos;
-			vec2 TargetPos = GameClient()->m_aClients[m_TargetId].m_Predicted.m_Pos;
-			float Dist = distance(MyPos, TargetPos);
-			if(Dist < GameClient()->m_aTuning[g_Config.m_ClDummy].m_HookLength)
+			if(m_aBotHooked[Dummy] && C14::CanClaim(Locks.m_HookOwner, C14::PRIO_AIMBOT))
 			{
-				pInput->m_Hook = 1;
-				pInput->m_TargetX = (int)(TargetPos.x - MyPos.x);
-				pInput->m_TargetY = (int)(TargetPos.y - MyPos.y);
-				m_aBotHooked[g_Config.m_ClDummy] = true;
+				pInput->m_Hook = 0;
+				Locks.m_HookOwner = C14::PRIO_AIMBOT;
+			}
+			m_aBotHooked[Dummy] = false;
+			m_aHookedTarget[Dummy] = -1;
+		}
+		else
+		{
+			// Pick the target to hook: prefer the aimbot's current target if
+			// it has one. If the aimbot scan flickered but we're already
+			// hooked to a still-active target, keep maintaining that hook.
+			int HookTarget = -1;
+			if(m_Active && m_TargetId >= 0 && m_TargetId < MAX_CLIENTS &&
+				GameClient()->m_Snap.m_aCharacters[m_TargetId].m_Active)
+			{
+				HookTarget = m_TargetId;
+			}
+			else if(m_aHookedTarget[Dummy] >= 0 && m_aHookedTarget[Dummy] < MAX_CLIENTS &&
+				GameClient()->m_Snap.m_aCharacters[m_aHookedTarget[Dummy]].m_Active)
+			{
+				HookTarget = m_aHookedTarget[Dummy];
+			}
+
+			if(HookTarget >= 0)
+			{
+				vec2 MyPos = GameClient()->m_PredictedChar.m_Pos;
+				vec2 TargetPos = GameClient()->m_aClients[HookTarget].m_Predicted.m_Pos;
+				float Dist = distance(MyPos, TargetPos);
+
+				if(Dist < GameClient()->m_aTuning[Dummy].m_HookLength)
+				{
+					if(C14::CanClaim(Locks.m_HookOwner, C14::PRIO_AIMBOT))
+					{
+						pInput->m_Hook = 1;
+						pInput->m_TargetX = (int)(TargetPos.x - MyPos.x);
+						pInput->m_TargetY = (int)(TargetPos.y - MyPos.y);
+						Locks.m_HookOwner = C14::PRIO_AIMBOT;
+						Locks.m_TargetOwner = C14::PRIO_AIMBOT;
+						m_aBotHooked[Dummy] = true;
+						m_aHookedTarget[Dummy] = HookTarget;
+					}
+				}
+				else
+				{
+					// Target out of hook range — release.
+					if(m_aBotHooked[Dummy] && C14::CanClaim(Locks.m_HookOwner, C14::PRIO_AIMBOT))
+					{
+						pInput->m_Hook = 0;
+						Locks.m_HookOwner = C14::PRIO_AIMBOT;
+					}
+					m_aBotHooked[Dummy] = false;
+					m_aHookedTarget[Dummy] = -1;
+				}
+			}
+			else if(m_aBotHooked[Dummy])
+			{
+				// No valid target at all — release.
+				if(C14::CanClaim(Locks.m_HookOwner, C14::PRIO_AIMBOT))
+				{
+					pInput->m_Hook = 0;
+					Locks.m_HookOwner = C14::PRIO_AIMBOT;
+				}
+				m_aBotHooked[Dummy] = false;
+				m_aHookedTarget[Dummy] = -1;
 			}
 		}
 	}
-	else if(m_aBotHooked[g_Config.m_ClDummy] && !m_aAutoHookKeyDown[g_Config.m_ClDummy])
+	else
 	{
-		pInput->m_Hook = 0;
-		m_aBotHooked[g_Config.m_ClDummy] = false;
+		// Key released or no local character — release hook.
+		if(m_aBotHooked[Dummy] && C14::CanClaim(Locks.m_HookOwner, C14::PRIO_AIMBOT))
+		{
+			pInput->m_Hook = 0;
+			Locks.m_HookOwner = C14::PRIO_AIMBOT;
+		}
+		m_aBotHooked[Dummy] = false;
+		m_aHookedTarget[Dummy] = -1;
 	}
 }

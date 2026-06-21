@@ -2501,6 +2501,7 @@ if(CLIENT)
     components/c14_freeze.h
     components/c14_helpers.cpp
     components/c14_helpers.h
+    components/c14_input.h
     components/c14_movement.cpp
     components/c14_movement.h
     components/c14_pure.h

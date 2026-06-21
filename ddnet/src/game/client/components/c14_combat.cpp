@@ -41,7 +41,7 @@ void CC14Combat::OnConsoleInit()
 	Console()->Register("+auto_fire", "", CFGFLAG_CLIENT, ConKeyInputState, &s_AutoFireState, "Auto fire (hold to keep firing)");
 }
 
-void CC14Combat::Apply(CNetObj_PlayerInput *pInput)
+void CC14Combat::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks)
 {
 	if(!GameClient()->m_Snap.m_pLocalCharacter)
 		return;
@@ -55,13 +55,16 @@ void CC14Combat::Apply(CNetObj_PlayerInput *pInput)
 		if(m_aAutoFireTimer[g_Config.m_ClDummy] >= 1)
 		{
 			m_aAutoFireTimer[g_Config.m_ClDummy] = 0;
-			pInput->m_Fire++;
+			if(C14::CanClaim(Locks.m_FireOwner, C14::PRIO_COMBAT))
+			{
+				pInput->m_Fire++;
+				Locks.m_FireOwner = C14::PRIO_COMBAT;
+			}
 		}
 	}
 	else
 	{
 		m_aAutoFireTimer[g_Config.m_ClDummy] = 0;
-		pInput->m_Fire &= ~1;
 	}
 
 	// CLIENT 14 Freeze Unfreeze - hammer frozen teammates
@@ -69,7 +72,17 @@ void CC14Combat::Apply(CNetObj_PlayerInput *pInput)
 	if((g_Config.m_ClFreezeUnfreeze || g_Config.m_ClHammerBot) && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		int LocalId = GameClient()->m_Snap.m_LocalClientId;
-		if(LocalId >= 0 && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_HAMMER && Client()->GameTick(0) - m_aLastHammerTick[g_Config.m_ClDummy] > 10)
+		// Reload cooldown from tuning (hammer_hit_fire_delay, ms -> ticks at
+		// SERVER_TICK_SPEED=50). Replaces a hardcoded "> 10" tick gate.
+		const int FireDelayMs = (int)GameClient()->m_aTuning[g_Config.m_ClDummy].m_HammerHitFireDelay;
+		const int ReloadTicks = (FireDelayMs * SERVER_TICK_SPEED + 999) / 1000;
+		// Engage range: physically grounded in the tee size (the engine hits
+		// at proximity*0.5), overridable via cl_hammer_bot_range (0 = auto).
+		const float HammerRange = g_Config.m_ClHammerBotRange > 0
+			? (float)g_Config.m_ClHammerBotRange
+			: CCharacterCore::PhysicalSize() * 2.0f;
+		if(LocalId >= 0 && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_HAMMER &&
+			Client()->GameTick(0) - m_aLastHammerTick[g_Config.m_ClDummy] > ReloadTicks)
 		{
 			int MyTeam = GameClient()->m_aClients[LocalId].m_Team;
 			vec2 MyPos = GameClient()->m_PredictedChar.m_Pos;
@@ -91,18 +104,20 @@ void CC14Combat::Apply(CNetObj_PlayerInput *pInput)
 						continue;
 					vec2 TPos = GameClient()->m_aClients[i].m_Predicted.m_Pos;
 					float Dist = distance(MyPos, TPos);
-					if(Dist < BestDist && Dist < 80.0f)
+					if(Dist < BestDist && Dist < HammerRange)
 					{
 						BestDist = Dist;
 						BestId = i;
 					}
 				}
-				if(BestId >= 0)
+				if(BestId >= 0 && C14::CanClaim(Locks.m_TargetOwner, C14::PRIO_COMBAT))
 				{
 					vec2 HammerDir = GameClient()->m_aClients[BestId].m_Predicted.m_Pos - MyPos;
 					pInput->m_TargetX = (int)HammerDir.x;
 					pInput->m_TargetY = (int)HammerDir.y;
 					pInput->m_Fire = pLast->m_Fire + 1;
+					Locks.m_TargetOwner = C14::PRIO_COMBAT;
+					Locks.m_FireOwner = C14::PRIO_COMBAT;
 					m_aLastHammerTick[g_Config.m_ClDummy] = Client()->GameTick(0);
 					DidHammer = true;
 				}
@@ -122,18 +137,20 @@ void CC14Combat::Apply(CNetObj_PlayerInput *pInput)
 						continue;
 					vec2 TPos = GameClient()->m_aClients[i].m_Predicted.m_Pos;
 					float Dist = distance(MyPos, TPos);
-					if(Dist < BestDist && Dist < 80.0f)
+					if(Dist < BestDist && Dist < HammerRange)
 					{
 						BestDist = Dist;
 						BestId = i;
 					}
 				}
-				if(BestId >= 0)
+				if(BestId >= 0 && C14::CanClaim(Locks.m_TargetOwner, C14::PRIO_COMBAT))
 				{
 					vec2 HammerDir = GameClient()->m_aClients[BestId].m_Predicted.m_Pos - MyPos;
 					pInput->m_TargetX = (int)HammerDir.x;
 					pInput->m_TargetY = (int)HammerDir.y;
 					pInput->m_Fire = pLast->m_Fire + 1;
+					Locks.m_TargetOwner = C14::PRIO_COMBAT;
+					Locks.m_FireOwner = C14::PRIO_COMBAT;
 					m_aLastHammerTick[g_Config.m_ClDummy] = Client()->GameTick(0);
 				}
 			}

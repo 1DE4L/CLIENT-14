@@ -10,6 +10,8 @@
 
 #include <game/client/component.h>
 
+#include "c14_input.h"
+
 class CC14Aimbot : public CComponent
 {
 public:
@@ -19,7 +21,7 @@ public:
 	void OnConsoleInit() override;
 	void OnReset() override;
 
-	void Apply(CNetObj_PlayerInput *pInput);
+	void Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks);
 	int TargetId() const { return m_TargetId; }
 
 private:
@@ -39,6 +41,10 @@ private:
 
 	int m_aAutoHookKeyDown[NUM_DUMMIES];
 	bool m_aBotHooked[NUM_DUMMIES];
+	// Once auto-hook fires, the hooked target ID is remembered here so the
+	// hook can be maintained independently of the aimbot scan (which flickers
+	// every 2 ticks and when EdgeScan temporarily loses visibility).
+	int m_aHookedTarget[NUM_DUMMIES];
 };
 
 #endif

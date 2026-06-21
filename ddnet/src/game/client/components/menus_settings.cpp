@@ -2760,6 +2760,9 @@ void CMenus::RenderSettingsClient14(CUIRect MainView)
 		g_Config.m_ClHammerBot ^= 1;
 
 	Left.HSplitTop(20.0f, &Button, &Left);
+	Ui()->DoScrollbarOption(&g_Config.m_ClHammerBotRange, &g_Config.m_ClHammerBotRange, &Button, "Hammer Range", 0, 300, &CUi::ms_LinearScrollbarScale, 0u, " px (0=auto)");
+
+	Left.HSplitTop(20.0f, &Button, &Left);
 	if(DoButton_CheckBox(&g_Config.m_ClFreezeUnfreeze, "Enable Freeze Unfreeze", g_Config.m_ClFreezeUnfreeze, &Button))
 		g_Config.m_ClFreezeUnfreeze ^= 1;
 

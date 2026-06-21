@@ -8,6 +8,8 @@
 
 #include <game/client/component.h>
 
+#include "c14_input.h"
+
 class CC14Combat : public CComponent
 {
 public:
@@ -16,7 +18,7 @@ public:
 
 	void OnConsoleInit() override;
 	void OnReset() override;
-	void Apply(CNetObj_PlayerInput *pInput);
+	void Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks);
 
 private:
 	struct CKeyInputState

@@ -1749,7 +1749,7 @@ void CHud::OnRender()
 		// FOV Lines - thick lines by drawing offset copies
 		if(g_Config.m_ClAimbot && g_Config.m_ClAimbotFov < 360)
 		{
-			float FovOffset = g_Config.m_ClAimbotFov * (pi / 180.0f);
+			float FovOffset = g_Config.m_ClAimbotFov * 0.01f;
 			vec2 MouseDir = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
 			float MouseAngle = angle(MouseDir);
 

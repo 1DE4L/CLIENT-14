@@ -40,7 +40,7 @@ void CC14Balance::OnConsoleInit()
 	Console()->Register("+balance", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Predict nearest player and align horizontally");
 }
 
-void CC14Balance::Apply(CNetObj_PlayerInput *pInput)
+void CC14Balance::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks)
 {
 	if(!C14::BotCanRun(GameClient()))
 		return;
@@ -116,8 +116,12 @@ void CC14Balance::Apply(CNetObj_PlayerInput *pInput)
 		int NewDir = 0;
 		if(Error > DeadZone) NewDir = 1;
 		else if(Error < -DeadZone) NewDir = -1;
-		pInput->m_Direction = NewDir;
 		m_LastDirection = NewDir;
+		if(C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_BALANCE))
+		{
+			pInput->m_Direction = NewDir;
+			Locks.m_DirectionOwner = C14::PRIO_BALANCE;
+		}
 		return;
 	}
 
@@ -141,6 +145,10 @@ void CC14Balance::Apply(CNetObj_PlayerInput *pInput)
 		else if(DeltaX < -OnThreshold) NewDir2 = -1;
 		else NewDir2 = 0;
 	}
-	pInput->m_Direction = NewDir2;
 	m_LastDirection = NewDir2;
+	if(C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_BALANCE))
+	{
+		pInput->m_Direction = NewDir2;
+		Locks.m_DirectionOwner = C14::PRIO_BALANCE;
+	}
 }
