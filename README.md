@@ -1,6 +1,7 @@
 # CLIENT 14
 
 DDNet tabanlı özel antrenman istemcisi. Bot/yardımcı özellikler içerir.
+CLYDE BORROW'a özel teşekkürler
 
 ## Ozellikler
 
@@ -17,7 +18,7 @@ DDNet tabanlı özel antrenman istemcisi. Bot/yardımcı özellikler içerir.
 - **Chat Translator**: Gelen/giden chat'i otomatik cevir (mymemory API)
 - **Warlist / Player Tracker / Chat Balloons / HUD overlay**
 
-## Arkadaslar Icin Kurulum (Kaynaktan Derleme)
+## Komplex kurulum (Kaynaktan Derleme)
 
 ### Gereksinimler (Windows)
 - [Visual Studio 2022](https://visualstudio.microsoft.com/) (C++ workload ile)
