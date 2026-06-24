@@ -29,3 +29,4 @@ MACRO_CONFIG_INT(ClHammerBot, cl_hammer_bot, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_S
 MACRO_CONFIG_INT(ClHammerBotRange, cl_hammer_bot_range, 0, 0, 400, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Hammer bot engage range in pixels (0 = auto, derived from tee physical size)")
 MACRO_CONFIG_INT(ClFreezeUnfreeze, cl_freeze_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Auto hammer frozen teammates to unfreeze them")
 MACRO_CONFIG_INT(ClBalanceBot, cl_balance_bot, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Always-on balance bot (align horizontally with nearest player). Also bindable as +balance (hold)")
+MACRO_CONFIG_INT(ClC14SettingsTab, cl_c14_settings_tab, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "CLIENT 14 settings sub-tab (0=bots, 1=freeze, 2=translator, 3=misc, 4=hotkeys, 5=warlist)")

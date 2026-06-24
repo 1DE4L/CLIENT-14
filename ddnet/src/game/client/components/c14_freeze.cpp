@@ -15,14 +15,6 @@
 
 #include "c14_helpers.h"
 
-CC14FreezeHelper::CC14FreezeHelper() = default;
-
-void CC14FreezeHelper::OnReset()
-{
-	m_LastArcSimTick = -100;
-	m_CachedJumpArcSafe = true;
-}
-
 void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Locks)
 {
 	if(!C14::BotCanRun(GameClient()))
@@ -43,8 +35,6 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Lock
 					continue;
 				if(GameClient()->m_aClients[i].m_Team == TEAM_SPECTATORS)
 					continue;
-				// Only hook non-frozen players: a frozen tee cannot pull us
-				// out, hooking them is useless and wastes the hook cooldown.
 				if(GameClient()->m_aClients[i].m_FreezeEnd > Client()->GameTick(0))
 					continue;
 				vec2 TPos = vec2(GameClient()->m_Snap.m_aCharacters[i].m_Cur.m_X, GameClient()->m_Snap.m_aCharacters[i].m_Cur.m_Y);
@@ -67,7 +57,21 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Lock
 		}
 	}
 
-	// CLIENT 14 Avoid Freeze - predictive physics simulation (every tick)
+	// CLIENT 14 Avoid Freeze - graduated response (gentle, not aggressive)
+	//
+	// Old approach: simulate all 3 directions, pick max survival. This was too
+	// aggressive — a 1-tick improvement triggered a full direction reversal,
+	// shoving the player around even in non-critical situations.
+	//
+	// New approach: graduated response with preference order:
+	//   1. If current direction is safe (survival >= N): do NOTHING.
+	//   2. If current direction will hit freeze: try STOPPING first (minimal
+	//      disruption). Only reverse if stopping also fails AND reversing is
+	//      significantly better (margin >= 2 ticks).
+	//
+	// This separates concerns: Avoid Freeze handles horizontal threats (walls
+	// of freeze ahead), Auto Jump Save handles vertical threats (freeze below
+	// that you need to jump over).
 	if(g_Config.m_ClAvoidFreeze && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		const CCharacterCore &LocalChar = GameClient()->m_PredictedChar;
@@ -84,32 +88,63 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Lock
 			else N = 5;
 		}
 
-		float DefaultMinDist = 999999.0f;
-		int DefaultSurvival = C14::SimulateStrategy(GameClient(), LocalChar, CurDir, -1, CurJump, N, DefaultMinDist);
+		// Step 1: Is the current direction safe?
+		float MinDistCur = 999999.0f;
+		int SurvivalCur = C14::SimulateStrategy(GameClient(), LocalChar, CurDir, -1, CurJump, N, MinDistCur);
 
-		if(DefaultSurvival < N)
+		if(SurvivalCur < N)
 		{
-			int BestSurvival = DefaultSurvival;
-			float BestMinDist = DefaultMinDist;
+			// Current direction will hit freeze. Try graduated alternatives.
+
+			// Step 2: Try stopping (minimal intervention).
+			float MinDistStop = 999999.0f;
+			int SurvivalStop = C14::SimulateStrategy(GameClient(), LocalChar, 0, -1, CurJump, N, MinDistStop);
+
 			int BestDir = CurDir;
+			int BestSurvival = SurvivalCur;
 
-			for(int d : {-1, 0, 1})
+			if(SurvivalStop >= N)
 			{
-				if(d == CurDir)
-					continue;
+				// Stopping is safe — just stop, don't reverse.
+				BestDir = 0;
+				BestSurvival = SurvivalStop;
+			}
+			else
+			{
+				// Stopping isn't enough. Try the opposite direction.
+				BestSurvival = SurvivalStop;
+				BestDir = 0;
 
-				float MinDist = 999999.0f;
-				int Survival = C14::SimulateStrategy(GameClient(), LocalChar, d, -1, CurJump, N, MinDist);
-
-				if(Survival > BestSurvival || (Survival == BestSurvival && MinDist > BestMinDist))
+				if(CurDir != 0)
 				{
-					BestSurvival = Survival;
-					BestMinDist = MinDist;
-					BestDir = d;
+					int OppDir = -CurDir;
+					float MinDistOpp = 999999.0f;
+					int SurvivalOpp = C14::SimulateStrategy(GameClient(), LocalChar, OppDir, -1, CurJump, N, MinDistOpp);
+					// Only reverse if it is SIGNIFICANTLY better (margin >= 2).
+					// This prevents jittery direction flipping for tiny gains.
+					if(SurvivalOpp > BestSurvival + 1)
+					{
+						BestDir = OppDir;
+						BestSurvival = SurvivalOpp;
+					}
+				}
+				else
+				{
+					// Standing still and still hitting freeze — try both dirs.
+					for(int d : {-1, 1})
+					{
+						float MinDistD = 999999.0f;
+						int SurvivalD = C14::SimulateStrategy(GameClient(), LocalChar, d, -1, CurJump, N, MinDistD);
+						if(SurvivalD > BestSurvival + 1)
+						{
+							BestDir = d;
+							BestSurvival = SurvivalD;
+						}
+					}
 				}
 			}
 
-			if(C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_FREEZE))
+			if(BestDir != CurDir && C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_FREEZE))
 			{
 				pInput->m_Direction = BestDir;
 				Locks.m_DirectionOwner = C14::PRIO_FREEZE;
@@ -117,145 +152,52 @@ void CC14FreezeHelper::Apply(CNetObj_PlayerInput *pInput, C14::CInputLocks &Lock
 		}
 	}
 
-	// CLIENT 14 Auto Jump Save
-	if(g_Config.m_ClAutoJumpSave)
+	// CLIENT 14 Auto Jump Save - Input Gate state machine
+	//
+	// Bot zıplama sinyalini sadece tek bir frame için gönderir, hemen ardından
+	// hattı temizleyerek oyuncunun klavye senkronizasyonunu korur.
+	//
+	// State machine:
+	//   0: Boşta — bot aktif, çarpışma bekliyor
+	//   1: Bot zıpladı — bu frame'de m_Jump=1 gönderildi
+	//   2: Tahliye — m_Jump=0 yap, oyuncunun klavyesine nefes aldır
+	//   (sonra 0'a dön)
+	if(g_Config.m_ClAutoJumpSave && GameClient()->m_Snap.m_pLocalCharacter)
 	{
-		vec2 Pos = GameClient()->m_PredictedChar.m_Pos;
-		vec2 Vel = GameClient()->m_PredictedChar.m_Vel;
-		CCollision *pCol = GameClient()->Collision();
-		bool OnGround = C14::Grounded(pCol, Pos);
-		int CurDir = pInput->m_Direction;
-		float VelX = Vel.x;
+		static int s_BotJumpState[NUM_DUMMIES] = {0, 0};
+		const int Dummy = g_Config.m_ClDummy;
+		const CCharacterCore &Src = GameClient()->m_PredictedChar;
+		bool HasAirJump = !(Src.m_Jumped & 2);
 
-		int JumpDir = CurDir;
-		if(JumpDir == 0)
+		if(s_BotJumpState[Dummy] == 1)
 		{
-			if(VelX > 0.05f) JumpDir = 1;
-			else if(VelX < -0.05f) JumpDir = -1;
+			// Bot zıpladı — hattı zorla temizle
+			pInput->m_Jump = 0;
+			s_BotJumpState[Dummy] = 2;
+			Locks.m_JumpOwner = C14::PRIO_FREEZE;
 		}
-		if(JumpDir == 0) JumpDir = 1;
-
-		bool fB = C14::HasFreeze(pCol, Pos.x, Pos.y + 18.0f) ||
-			  C14::HasFreeze(pCol, Pos.x - 10.0f, Pos.y + 18.0f) ||
-			  C14::HasFreeze(pCol, Pos.x + 10.0f, Pos.y + 18.0f);
-
-		float Reach = 32.0f;
-
-		float h[5] = {Pos.y + 14.0f, Pos.y + 4.0f, Pos.y - 4.0f, Pos.y - 12.0f, Pos.y - 20.0f};
-		bool fF = false;
-		if(JumpDir != 0)
+		else if(s_BotJumpState[Dummy] == 2)
 		{
-			for(int hi = 0; hi < 5; hi++)
+			// Tahliye bitti — kontrolü oyuncuya iade et
+			s_BotJumpState[Dummy] = 0;
+		}
+		else if(HasAirJump && s_BotJumpState[Dummy] == 0)
+		{
+			int CurDir = pInput->m_Direction;
+
+			// Çarpmaya tam 1 frame kala
+			int TicksToFreeze = C14::SimulateToFreezeTick(GameClient(), Src, CurDir, 15);
+
+			if(TicksToFreeze == 1)
 			{
-				if(C14::HasFreeze(pCol, Pos.x + JumpDir * Reach, h[hi]))
+				// Oyuncu o an zıplamıyorsa bot devreye girsin
+				if((pInput->m_Jump & 1) == 0 &&
+					C14::CanClaim(Locks.m_JumpOwner, C14::PRIO_FREEZE))
 				{
-					fF = true;
-					break;
+					pInput->m_Jump = 1;
+					s_BotJumpState[Dummy] = 1;
+					Locks.m_JumpOwner = C14::PRIO_FREEZE;
 				}
-			}
-		}
-
-		bool fA = C14::HasFreeze(pCol, Pos.x, Pos.y - 16.0f);
-
-		bool NeedJump = fB || fF;
-
-		bool HeadClear = !pCol->CheckPoint(Pos.x, Pos.y - C14::PHYS_SIZE - 4);
-
-		bool LandingSafe = true;
-		if(NeedJump)
-		{
-			LandingSafe = !C14::HasFreeze(pCol, Pos.x + JumpDir * 32.0f - 8.0f, Pos.y + 50.0f)
-				  && !C14::HasFreeze(pCol, Pos.x + JumpDir * 32.0f + 8.0f, Pos.y + 50.0f)
-				  && !C14::HasFreeze(pCol, Pos.x + JumpDir * 56.0f - 8.0f, Pos.y + 70.0f)
-				  && !C14::HasFreeze(pCol, Pos.x + JumpDir * 56.0f + 8.0f, Pos.y + 70.0f);
-		}
-
-		bool DiagonalSafe = true;
-		if(NeedJump)
-		{
-			float diagX = JumpDir * 32.0f;
-			float diagY = 32.0f;
-			if(C14::HasFreeze(pCol, Pos.x + diagX, Pos.y + diagY) ||
-			   C14::HasFreeze(pCol, Pos.x + diagX, Pos.y - diagY))
-			{
-				DiagonalSafe = false;
-			}
-		}
-
-		// Throttled jump-arc simulation: rerun every m_ArcSimInterval ticks,
-		// reuse the cached verdict in between (the threat landscape does not
-		// change much within a few ticks while grounded).
-		if(NeedJump && OnGround && (Client()->GameTick(0) - m_LastArcSimTick >= m_ArcSimInterval || Client()->GameTick(0) < m_LastArcSimTick))
-		{
-			m_LastArcSimTick = Client()->GameTick(0);
-			vec2 SimPos = Pos;
-			vec2 SimVel = Vel;
-			SimVel.y = -13.2f;
-
-			m_CachedJumpArcSafe = true;
-			for(int t = 0; t < 35; t++)
-			{
-				SimVel.y += 0.5f;
-				SimPos += SimVel;
-
-				if(C14::HasFreeze(pCol, SimPos.x, SimPos.y) ||
-				   C14::HasFreeze(pCol, SimPos.x + 6.0f, SimPos.y) ||
-				   C14::HasFreeze(pCol, SimPos.x - 6.0f, SimPos.y) ||
-				   C14::HasFreeze(pCol, SimPos.x, SimPos.y + 10.0f) ||
-				   C14::HasFreeze(pCol, SimPos.x, SimPos.y - 10.0f))
-				{
-					m_CachedJumpArcSafe = false;
-					break;
-				}
-
-				if(C14::Grounded(pCol, SimPos))
-					break;
-			}
-		}
-		else if(!NeedJump || !OnGround)
-		{
-			// Reset the cache when there is no pending jump so a stale "unsafe"
-			// verdict does not block a future jump after the situation clears.
-			m_CachedJumpArcSafe = true;
-			m_LastArcSimTick = Client()->GameTick(0);
-		}
-		bool JumpArcSafe = m_CachedJumpArcSafe;
-
-		bool PlayerPressingJump = (pInput->m_Jump & 1) != 0;
-
-		if(!PlayerPressingJump)
-		{
-			if(NeedJump && OnGround && !fA && HeadClear && LandingSafe && JumpArcSafe && DiagonalSafe &&
-				C14::CanClaim(Locks.m_JumpOwner, C14::PRIO_FREEZE))
-			{
-				pInput->m_Jump |= 1;
-				Locks.m_JumpOwner = C14::PRIO_FREEZE;
-			}
-			if(fA && !OnGround && C14::CanClaim(Locks.m_JumpOwner, C14::PRIO_FREEZE))
-			{
-				pInput->m_Jump &= ~1;
-				Locks.m_JumpOwner = C14::PRIO_FREEZE;
-			}
-		}
-
-		if(!JumpArcSafe || !LandingSafe || !DiagonalSafe)
-		{
-			if(fF && !fB && C14::CanClaim(Locks.m_DirectionOwner, C14::PRIO_FREEZE))
-			{
-				int RevDir = -CurDir;
-				if(RevDir != 0)
-				{
-					bool RevSafe = !C14::HasFreeze(pCol, Pos.x + RevDir * 32.0f, Pos.y);
-					if(RevSafe)
-						pInput->m_Direction = RevDir;
-					else
-						pInput->m_Direction = 0;
-				}
-				else
-				{
-					pInput->m_Direction = 0;
-				}
-				Locks.m_DirectionOwner = C14::PRIO_FREEZE;
 			}
 		}
 	}

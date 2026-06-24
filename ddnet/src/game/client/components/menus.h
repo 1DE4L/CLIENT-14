@@ -839,6 +839,14 @@ private:
 	void RenderSettingsAppearance(CUIRect MainView);
 	bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);
 
+	// CLIENT 14 sub-tab render functions
+	void RenderSettingsC14Bots(CUIRect MainView);
+	void RenderSettingsC14Freeze(CUIRect MainView);
+	void RenderSettingsC14Translator(CUIRect MainView);
+	void RenderSettingsC14Misc(CUIRect MainView);
+	void RenderSettingsC14Hotkeys(CUIRect MainView);
+	void RenderSettingsC14Warlist(CUIRect MainView);
+
 	// CLIENT 14 hotkey bind state
 	CButtonContainer m_aClient14BindButtons[20];
 	CBindSlot m_aClient14BindSlots[10] = {{EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}, {EMPTY_BIND_SLOT}};

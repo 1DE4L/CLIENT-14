@@ -65,6 +65,14 @@ inline bool BotCanRun(const CGameClient *pGC)
 	int SimulateStrategy(CGameClient *pGC, const CCharacterCore &Source,
 		int SimDir, int SimHook, int SimJump, int N, float &OutMinDistToFreeze);
 
+	// Frame-perfect freeze tick: simulate up to N ticks WITHOUT jumping and
+	// return the tick on which the tee first hits freeze (0-indexed). Returns
+	// N if no freeze is hit within the horizon. This is used by Auto Jump
+	// Save to fire the jump exactly 1 tick before impact (frame-perfect),
+	// instead of jumping early and wasting the air-jump.
+	int SimulateToFreezeTick(CGameClient *pGC, const CCharacterCore &Source,
+		int SimDir, int N);
+
 } // namespace C14
 
 #endif

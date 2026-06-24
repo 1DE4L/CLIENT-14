@@ -2694,14 +2694,57 @@ void CMenus::RenderSettingsAppearance(CUIRect MainView)
 
 void CMenus::RenderSettingsClient14(CUIRect MainView)
 {
-	CUIRect Button, Left, Right, Label;
+	CUIRect TabBar, Content, Label, Button;
 
+	// Title
 	MainView.HSplitTop(30.0f, &Label, &MainView);
 	Ui()->DoLabel(&Label, "CLIENT 14 Ayarlari", 22.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
+	// Sub-tab bar (horizontal)
+	MainView.HSplitTop(26.0f, &TabBar, &Content);
+	TabBar.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.3f), IGraphics::CORNER_B, 5.0f);
+
+	static const char *apSubTabs[6] = {
+		"Bots",
+		"Freeze",
+		"Translator",
+		"Misc",
+		"Hotkeys",
+		"Warlist",
+	};
+	static CButtonContainer s_aSubTabButtons[6];
+
+	float TabW = TabBar.w / 6.0f;
+	for(int i = 0; i < 6; i++)
+	{
+		CUIRect Tab;
+		TabBar.VSplitLeft(TabW, &Tab, &TabBar);
+		if(DoButton_MenuTab(&s_aSubTabButtons[i], apSubTabs[i], g_Config.m_ClC14SettingsTab == i, &Tab, IGraphics::CORNER_BR, nullptr, 0, 0))
+			g_Config.m_ClC14SettingsTab = i;
+	}
+
+	Content.HSplitTop(5.0f, nullptr, &Content);
+
+	// Render the selected sub-tab
+	switch(g_Config.m_ClC14SettingsTab)
+	{
+	case 0: RenderSettingsC14Bots(Content); break;
+	case 1: RenderSettingsC14Freeze(Content); break;
+	case 2: RenderSettingsC14Translator(Content); break;
+	case 3: RenderSettingsC14Misc(Content); break;
+	case 4: RenderSettingsC14Hotkeys(Content); break;
+	case 5: RenderSettingsC14Warlist(Content); break;
+	}
+}
+
+void CMenus::RenderSettingsC14Bots(CUIRect MainView)
+{
+	CUIRect Button, Left, Right, Label;
+
 	MainView.VSplitMid(&Left, &Right, 10.0f);
 
+	// --- Aimbot ---
 	Left.HSplitTop(20.0f, &Label, &Left);
 	Ui()->DoLabel(&Label, "Aimbot", 18.0f, TEXTALIGN_ML);
 	Left.HSplitTop(2.0f, nullptr, &Left);
@@ -2722,39 +2765,11 @@ void CMenus::RenderSettingsClient14(CUIRect MainView)
 
 	Left.HSplitTop(15.0f, nullptr, &Left);
 
+	// --- Combat ---
 	Left.HSplitTop(20.0f, &Label, &Left);
-	Ui()->DoLabel(&Label, "Quick Stop", 18.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, "Combat", 18.0f, TEXTALIGN_ML);
 	Left.HSplitTop(2.0f, nullptr, &Left);
 
-	Left.HSplitTop(20.0f, &Button, &Left);
-	if(DoButton_CheckBox(&g_Config.m_ClQuickStop, "Enable Quick Stop", g_Config.m_ClQuickStop, &Button))
-		g_Config.m_ClQuickStop ^= 1;
-
-	Left.HSplitTop(20.0f, &Button, &Left);
-	if(DoButton_CheckBox(&g_Config.m_ClQuickStopGround, "Ground Only", g_Config.m_ClQuickStopGround, &Button))
-		g_Config.m_ClQuickStopGround ^= 1;
-
-	Left.HSplitTop(15.0f, nullptr, &Left);
-
-	Left.HSplitTop(20.0f, &Label, &Left);
-	Ui()->DoLabel(&Label, "Anti-Freeze", 18.0f, TEXTALIGN_ML);
-	Left.HSplitTop(2.0f, nullptr, &Left);
-
-	Left.HSplitTop(20.0f, &Button, &Left);
-	if(DoButton_CheckBox(&g_Config.m_ClAntiFreeze, "Enable Anti-Freeze", g_Config.m_ClAntiFreeze, &Button))
-		g_Config.m_ClAntiFreeze ^= 1;
-
-	Left.HSplitTop(20.0f, &Button, &Left);
-	if(DoButton_CheckBox(&g_Config.m_ClAvoidFreeze, "Enable Avoid Freeze", g_Config.m_ClAvoidFreeze, &Button))
-		g_Config.m_ClAvoidFreeze ^= 1;
-
-	Left.HSplitTop(20.0f, &Button, &Left);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoJumpSave, "Enable Auto Jump Save", g_Config.m_ClAutoJumpSave, &Button))
-		g_Config.m_ClAutoJumpSave ^= 1;
-
-	Left.HSplitTop(20.0f, &Label, &Left);
-	Ui()->DoLabel(&Label, "Auto Hook: bind a key in Hotkeys", 12.0f, TEXTALIGN_ML);
-	Left.HSplitTop(2.0f, nullptr, &Left);
 	Left.HSplitTop(20.0f, &Button, &Left);
 	if(DoButton_CheckBox(&g_Config.m_ClHammerBot, "Enable Hammer Bot", g_Config.m_ClHammerBot, &Button))
 		g_Config.m_ClHammerBot ^= 1;
@@ -2768,63 +2783,158 @@ void CMenus::RenderSettingsClient14(CUIRect MainView)
 
 	Left.HSplitTop(15.0f, nullptr, &Left);
 	Left.HSplitTop(20.0f, &Label, &Left);
-	Ui()->DoLabel(&Label, "Chat Translator", 18.0f, TEXTALIGN_ML);
-	Left.HSplitTop(2.0f, nullptr, &Left);
+	Ui()->DoLabel(&Label, "Auto Hook: bind a key in Hotkeys", 12.0f, TEXTALIGN_ML);
 
-	Left.HSplitTop(20.0f, &Button, &Left);
+	// --- Quick Stop ---
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, "Quick Stop", 18.0f, TEXTALIGN_ML);
+	Right.HSplitTop(2.0f, nullptr, &Right);
+
+	Right.HSplitTop(20.0f, &Button, &Right);
+	if(DoButton_CheckBox(&g_Config.m_ClQuickStop, "Enable Quick Stop", g_Config.m_ClQuickStop, &Button))
+		g_Config.m_ClQuickStop ^= 1;
+
+	Right.HSplitTop(20.0f, &Button, &Right);
+	if(DoButton_CheckBox(&g_Config.m_ClQuickStopGround, "Ground Only", g_Config.m_ClQuickStopGround, &Button))
+		g_Config.m_ClQuickStopGround ^= 1;
+
+	Right.HSplitTop(15.0f, nullptr, &Right);
+
+	// --- Balance Bot ---
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, "Balance Bot", 18.0f, TEXTALIGN_ML);
+	Right.HSplitTop(2.0f, nullptr, &Right);
+
+	Right.HSplitTop(20.0f, &Button, &Right);
+	if(DoButton_CheckBox(&g_Config.m_ClBalanceBot, "Enable Balance Bot", g_Config.m_ClBalanceBot, &Button))
+		g_Config.m_ClBalanceBot ^= 1;
+
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, "Also bindable as +balance (hold)", 12.0f, TEXTALIGN_ML);
+}
+
+void CMenus::RenderSettingsC14Freeze(CUIRect MainView)
+{
+	CUIRect Button, Label;
+
+	MainView.HSplitTop(20.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "Freeze Protection", 18.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAntiFreeze, "Enable Anti-Freeze", g_Config.m_ClAntiFreeze, &Button))
+		g_Config.m_ClAntiFreeze ^= 1;
+	MainView.HSplitTop(18.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "  Auto-hook nearest non-frozen player when you are frozen", 10.0f, TEXTALIGN_ML);
+
+	MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAvoidFreeze, "Enable Avoid Freeze", g_Config.m_ClAvoidFreeze, &Button))
+		g_Config.m_ClAvoidFreeze ^= 1;
+	MainView.HSplitTop(18.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "  Steer away from freeze tiles (gradual: stop first, reverse only if needed)", 10.0f, TEXTALIGN_ML);
+
+	MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+	MainView.HSplitTop(20.0f, &Button, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoJumpSave, "Enable Auto Jump Save (FJS)", g_Config.m_ClAutoJumpSave, &Button))
+		g_Config.m_ClAutoJumpSave ^= 1;
+	MainView.HSplitTop(18.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "  Frame-perfect freeze-jump: jumps 1 tick before hitting freeze", 10.0f, TEXTALIGN_ML);
+}
+
+void CMenus::RenderSettingsC14Translator(CUIRect MainView)
+{
+	CUIRect Button, Label;
+
+	MainView.HSplitTop(20.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "Chat Translator", 18.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+
+	MainView.HSplitTop(20.0f, &Button, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClTransIn, "Translate Incoming", g_Config.m_ClTransIn, &Button))
 		g_Config.m_ClTransIn ^= 1;
 
-	Left.HSplitTop(18.0f, &Button, &Left);
+	MainView.HSplitTop(18.0f, &Button, &MainView);
 	{
 		char aBuf[128];
-		str_format(aBuf, sizeof(aBuf), "  Incoming: %s → %s", g_Config.m_ClTransInSrc, g_Config.m_ClTransInDst);
+		str_format(aBuf, sizeof(aBuf), "  Incoming: %s -> %s", g_Config.m_ClTransInSrc, g_Config.m_ClTransInDst);
 		Ui()->DoLabel(&Button, aBuf, 10.0f, TEXTALIGN_ML);
 	}
 
-	Left.HSplitTop(20.0f, &Button, &Left);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClTransOut, "Translate Outgoing", g_Config.m_ClTransOut, &Button))
 		g_Config.m_ClTransOut ^= 1;
 
-	Left.HSplitTop(18.0f, &Button, &Left);
+	MainView.HSplitTop(18.0f, &Button, &MainView);
 	{
 		char aBuf[128];
-		str_format(aBuf, sizeof(aBuf), "  Outgoing: %s → %s", g_Config.m_ClTransOutSrc, g_Config.m_ClTransOutDst);
+		str_format(aBuf, sizeof(aBuf), "  Outgoing: %s -> %s", g_Config.m_ClTransOutSrc, g_Config.m_ClTransOutDst);
 		Ui()->DoLabel(&Button, aBuf, 10.0f, TEXTALIGN_ML);
 	}
 
-	Left.HSplitTop(20.0f, &Button, &Left);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClTransShowOriginal, "Show Original", g_Config.m_ClTransShowOriginal, &Button))
 		g_Config.m_ClTransShowOriginal ^= 1;
 
-	Left.HSplitTop(20.0f, &Button, &Left);
+	MainView.HSplitTop(15.0f, nullptr, &MainView);
+
+	MainView.HSplitTop(20.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "API Settings", 16.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
+
+	MainView.HSplitTop(20.0f, &Button, &MainView);
 	Ui()->DoScrollbarOption(&g_Config.m_ClTransRateLimitMs, &g_Config.m_ClTransRateLimitMs, &Button, "Rate Limit", 0, 2000, &CUi::ms_LinearScrollbarScale, 0u, " ms");
 
-	Left.HSplitTop(20.0f, &Button, &Left);
+	MainView.HSplitTop(20.0f, &Button, &MainView);
 	Ui()->DoScrollbarOption(&g_Config.m_ClTransCacheSize, &g_Config.m_ClTransCacheSize, &Button, "Cache Size", 0, 1000, &CUi::ms_LinearScrollbarScale);
 
-	Left.HSplitTop(14.0f, &Label, &Left);
+	MainView.HSplitTop(14.0f, &Label, &MainView);
 	{
 		char aBuf[160];
 		str_format(aBuf, sizeof(aBuf), "API email: %s (set cl_trans_api_email)", g_Config.m_ClTransApiEmail[0] ? g_Config.m_ClTransApiEmail : "(none)");
 		Ui()->DoLabel(&Label, aBuf, 10.0f, TEXTALIGN_ML);
 	}
+}
 
-	Right.HSplitTop(20.0f, &Label, &Right);
-	Ui()->DoLabel(&Label, "Other Features", 18.0f, TEXTALIGN_ML);
-	Right.HSplitTop(2.0f, nullptr, &Right);
+void CMenus::RenderSettingsC14Misc(CUIRect MainView)
+{
+	CUIRect Button, Left, Right, Label;
 
-	Right.HSplitTop(20.0f, &Button, &Right);
+	MainView.VSplitMid(&Left, &Right, 10.0f);
+
+	// --- Chat Balloons ---
+	Left.HSplitTop(20.0f, &Label, &Left);
+	Ui()->DoLabel(&Label, "Chat Balloons", 18.0f, TEXTALIGN_ML);
+	Left.HSplitTop(2.0f, nullptr, &Left);
+
+	Left.HSplitTop(20.0f, &Button, &Left);
 	if(DoButton_CheckBox(&g_Config.m_ClChatBalloons, "Chat Balloons", g_Config.m_ClChatBalloons, &Button))
 		g_Config.m_ClChatBalloons ^= 1;
 
-	Right.HSplitTop(20.0f, &Button, &Right);
+	Left.HSplitTop(20.0f, &Button, &Left);
 	Ui()->DoScrollbarOption(&g_Config.m_ClChatBalloonsTime, &g_Config.m_ClChatBalloonsTime, &Button, "Balloon Time", 1, 15, &CUi::ms_LinearScrollbarScale, 0u, " sec");
 
-	Right.HSplitTop(10.0f, nullptr, &Right);
+	Left.HSplitTop(15.0f, nullptr, &Left);
 
+	// --- War List info ---
+	Left.HSplitTop(20.0f, &Label, &Left);
+	Ui()->DoLabel(&Label, "War List", 18.0f, TEXTALIGN_ML);
+	Left.HSplitTop(2.0f, nullptr, &Left);
+
+	Left.HSplitTop(20.0f, &Button, &Left);
+	{
+		char aBuf[128];
+		str_format(aBuf, sizeof(aBuf), "War List: %s", g_Config.m_ClWarPlayers[0] ? g_Config.m_ClWarPlayers : "(empty)");
+		Ui()->DoLabel(&Button, aBuf, 11.0f, TEXTALIGN_ML);
+	}
+	Left.HSplitTop(18.0f, &Label, &Left);
+	Ui()->DoLabel(&Label, "  Manage in the Warlist tab", 10.0f, TEXTALIGN_ML);
+
+	// --- Player Tracker ---
 	Right.HSplitTop(20.0f, &Label, &Right);
-	Ui()->DoLabel(&Label, "Player Tracker", 16.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, "Player Tracker", 18.0f, TEXTALIGN_ML);
 	Right.HSplitTop(2.0f, nullptr, &Right);
 
 	Right.HSplitTop(20.0f, &Button, &Right);
@@ -2832,21 +2942,128 @@ void CMenus::RenderSettingsClient14(CUIRect MainView)
 
 	Right.HSplitTop(20.0f, &Button, &Right);
 	Ui()->DoScrollbarOption(&g_Config.m_ClPlayerTrackerSize, &g_Config.m_ClPlayerTrackerSize, &Button, "Tracker Size", 20, 80, &CUi::ms_LinearScrollbarScale);
+}
+
+void CMenus::RenderSettingsC14Warlist(CUIRect MainView)
+{
+	CUIRect Button, Left, Right, Label, Row;
+
+	MainView.VSplitMid(&Left, &Right, 10.0f);
+
+	// --- Left: Online players on this server ---
+	Left.HSplitTop(20.0f, &Label, &Left);
+	Ui()->DoLabel(&Label, "Online Players", 18.0f, TEXTALIGN_ML);
+	Left.HSplitTop(2.0f, nullptr, &Left);
+
+	int LocalId = GameClient()->m_Snap.m_LocalClientId;
+	int ShownPlayers = 0;
+	static CButtonContainer s_aAddButtons[MAX_CLIENTS];
+
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!GameClient()->m_aClients[i].m_Active)
+			continue;
+		if(i == LocalId)
+			continue;
+
+		const char *pName = GameClient()->m_aClients[i].m_aName;
+		if(!pName || pName[0] == '\0')
+			continue;
+
+		bool InWar = GameClient()->IsWarPlayer(pName);
+
+		Left.HSplitTop(20.0f, &Row, &Left);
+		Row.VSplitLeft(140.0f, &Label, &Button);
+
+		// Player name (red if in war list, white otherwise)
+		TextRender()->TextColor(InWar ? 1.0f : 1.0f, InWar ? 0.3f : 1.0f, InWar ? 0.3f : 1.0f, 1.0f);
+		Ui()->DoLabel(&Label, pName, 12.0f, TEXTALIGN_ML);
+		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+		// Add/Remove button
+		if(DoButton_Menu(&s_aAddButtons[i], InWar ? "Remove" : "Add to War", 0, &Button))
+		{
+			char aCmd[128];
+			if(InWar)
+				str_format(aCmd, sizeof(aCmd), "war remove %s", pName);
+			else
+				str_format(aCmd, sizeof(aCmd), "war add %s", pName);
+			GameClient()->Console()->ExecuteLine(aCmd, -1, true);
+		}
+
+		ShownPlayers++;
+	}
+
+	if(ShownPlayers == 0)
+	{
+		Left.HSplitTop(20.0f, &Label, &Left);
+		Ui()->DoLabel(&Label, "No other players on this server", 12.0f, TEXTALIGN_ML);
+	}
+
+	// --- Right: Current war list ---
+	Right.HSplitTop(20.0f, &Label, &Right);
+	Ui()->DoLabel(&Label, "Current War List", 18.0f, TEXTALIGN_ML);
+	Right.HSplitTop(2.0f, nullptr, &Right);
+
+	// Clear button
+	Right.HSplitTop(20.0f, &Button, &Right);
+	static CButtonContainer s_ClearButton;
+	if(DoButton_Menu(&s_ClearButton, "Clear All", 0, &Button))
+	{
+		g_Config.m_ClWarPlayers[0] = '\0';
+	}
 
 	Right.HSplitTop(10.0f, nullptr, &Right);
 
-	Right.HSplitTop(20.0f, &Button, &Right);
+	// Parse and display war list entries with remove buttons
+	static CButtonContainer s_aRemoveButtons[32];
+	int WarIndex = 0;
+	char aToken[32];
+	const char *pList = g_Config.m_ClWarPlayers;
+
+	if(g_Config.m_ClWarPlayers[0] == '\0')
 	{
-		char aBuf[128];
-		str_format(aBuf, sizeof(aBuf), "War List: %s", g_Config.m_ClWarPlayers[0] ? g_Config.m_ClWarPlayers : "(empty)");
-		Ui()->DoLabel(&Button, aBuf, 11.0f, TEXTALIGN_ML);
+		Right.HSplitTop(20.0f, &Label, &Right);
+		Ui()->DoLabel(&Label, "(empty)", 12.0f, TEXTALIGN_ML);
 	}
+	else
+	{
+		while(true)
+		{
+			pList = str_next_token(pList, ",", aToken, sizeof(aToken));
+			if(!pList)
+				break;
+			if(aToken[0] == '\0')
+				continue;
 
-	Right.HSplitTop(15.0f, nullptr, &Right);
+			Right.HSplitTop(20.0f, &Row, &Right);
+			Row.VSplitLeft(140.0f, &Label, &Button);
 
-	Right.HSplitTop(20.0f, &Label, &Right);
-	Ui()->DoLabel(&Label, "Hotkeys", 16.0f, TEXTALIGN_ML);
-	Right.HSplitTop(2.0f, nullptr, &Right);
+			TextRender()->TextColor(1.0f, 0.3f, 0.3f, 1.0f);
+			Ui()->DoLabel(&Label, aToken, 12.0f, TEXTALIGN_ML);
+			TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+			if(WarIndex < 32)
+			{
+				if(DoButton_Menu(&s_aRemoveButtons[WarIndex], "Remove", 0, &Button))
+				{
+					char aCmd[128];
+					str_format(aCmd, sizeof(aCmd), "war remove %s", aToken);
+					GameClient()->Console()->ExecuteLine(aCmd, -1, true);
+				}
+			}
+			WarIndex++;
+		}
+	}
+}
+
+void CMenus::RenderSettingsC14Hotkeys(CUIRect MainView)
+{
+	CUIRect Button, Label;
+
+	MainView.HSplitTop(20.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, "Hotkeys", 18.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(2.0f, nullptr, &MainView);
 
 	static const char *apCommands[10] = {
 		"toggle cl_aimbot 0 1",
@@ -2876,7 +3093,7 @@ void CMenus::RenderSettingsClient14(CUIRect MainView)
 	for(int i = 0; i < 10; i++)
 	{
 		CUIRect Row, KeyRect;
-		Right.HSplitTop(20.0f, &Row, &Right);
+		MainView.HSplitTop(20.0f, &Row, &MainView);
 		Row.VSplitLeft(100.0f, &Label, &KeyRect);
 		Ui()->DoLabel(&Label, apLabels[i], 12.0f, TEXTALIGN_ML);
 
